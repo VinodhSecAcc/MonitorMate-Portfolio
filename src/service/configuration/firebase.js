@@ -28,4 +28,4 @@ const storage = getStorage(firebaseApp);
 // Initialize Realtime Database
 const database = getDatabase(firebaseApp);
 
-export { database, ref, set, get, push, onValue, auth, storage, storageRef, uploadBytes, getDownloadURL };
+export {firebaseApp, database, ref, set, get, push, onValue, auth, storage, storageRef, uploadBytes, getDownloadURL };
