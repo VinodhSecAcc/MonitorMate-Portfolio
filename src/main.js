@@ -5,7 +5,7 @@ import { createHead } from '@vueuse/head'; // Import Vue Meta alternative
 import { library } from "@fortawesome/fontawesome-svg-core";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
 import { faEnvelope, faUser, faLock, faEye, faEyeSlash } from "@fortawesome/free-solid-svg-icons";
-
+import "@fortawesome/fontawesome-free/css/all.css";
 // Add FontAwesome icons
 library.add(faEnvelope, faUser, faLock, faEye, faEyeSlash);
 

@@ -1,6 +1,6 @@
 <template>
     <div class="nav-container">
-      <span class="nav-title">MonitorMate</span>
+      <span @click="navigate('dashboard')" class="nav-title">MonitorMate</span>
       <nav class="nav-bar">
         <img :src="userProfilePic" alt="Profile" class="profile-pic" />
         <div class="nav-links">

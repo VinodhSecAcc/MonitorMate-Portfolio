@@ -50,7 +50,7 @@
           </div>
   
           <div class="input-group">
-            <label>Course</label>
+            <label>Lecture Course</label>
             <select v-model="ProfileViewModel.selectedCourse" :disabled="!ProfileViewModel.isEditing" class="styled-select">
               <option v-for="course in ProfileViewModel.facultyCourses[ProfileViewModel.selectedFaculty]" :key="course" :value="course">
                 {{ course }}

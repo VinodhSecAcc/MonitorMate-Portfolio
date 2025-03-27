@@ -1,101 +1,500 @@
 <template>
-    <div class="container">
-      <h2>Generate QR Code for Attendance</h2>
-  
-      <!-- Course Code Input -->
-      <label for="course">Enter Course Code:</label>
-      <input type="text" v-model="courseCode" placeholder="e.g. CSC101" />
-  
-      <!-- Section Selection -->
-      <label for="section">Select Section:</label>
-      <select v-model="selectedSection">
-        <option disabled value="">Select Section</option>
-        <option v-for="section in sections" :key="section" :value="section">
-          Section {{ section }}
-        </option>
-      </select>
-  
-      <!-- Time Slot Selection -->
-      <label>Select Time Slot(s):</label>
-      <div class="time-slots">
-        <label v-for="slot in timeSlots" :key="slot">
-          <input type="checkbox" :value="slot" v-model="selectedSlots" />
-          {{ slot }}
-        </label>
+<navigation_bar />
+  <div class="container">
+    <h2>Generate QR Code for Attendance</h2>
+
+    <div class="form-container">
+      <div class="input-section">
+        <!-- Course ID Input -->
+        <div class="form-group">
+          <label for="course">Enter Course ID</label>
+          <input type="text" v-model="courseCode" @input="formatCourseID" placeholder="e.g. SECJ3324" />
+          <p v-if="!isCourseCodeValid && courseCode.length > 0" class="error">
+            Course ID must follow the format of 4 letters followed by 4 digits, e.g. SECJ3324.
+          </p>
+        </div>
+
+        <!-- Date Selection -->
+        <div class="form-group">
+          <label for="date">Select Date</label>
+          <input type="date" v-model="selectedDate" />
+        </div>
+
+        <!-- Section Selection -->
+        <div class="form-group">
+          <label for="section">Select Section</label>
+          <select v-model="selectedSection">
+            <option disabled value="">Select Section</option>
+            <option v-for="section in sections" :key="section" :value="section">
+              Section {{ section }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Generate QR & End Attendance Buttons -->
+<div class="button-group">
+  <button :disabled="!canGenerateQR || qrButtonDisabled" @click="generateQRCode" class="qr-btn">
+  Generate QR Attendance
+</button>
+
+  <button :disabled="!qrGenerated" @click="endAttendance" class="end-btn">Close QR Attendance</button>
+</div>
+
       </div>
-  
-      <!-- Generate QR Button -->
-      <button :disabled="!canGenerateQR" @click="generateQRCode">Generate QR</button>
-  
-      <!-- Show QR Code -->
-      <canvas ref="qrCanvas"></canvas>
+<!-- Time Slot Selection -->
+<div class="time-slots">
+  <div class="slot-header">
+    <label>Select Time Slot(s)</label>
+    <i class="fas fa-info-circle info-icon" @click="showInfo = !showInfo"></i>
+  </div>
+
+  <!-- Floating Info Box (Now Positioned Correctly) -->
+  <div v-if="showInfo" class="info-box">
+    <p><strong>How to use the time slots:</strong></p>
+    <ul>
+      <li>Click a time slot to select it.</li>
+      <li>Click another slot to select a range.</li>
+      <li>Click a selected slot again to deselect it.</li>
+      <li>Selecting before the first slot resets all selections.</li>
+      <li>Removing a middle slot from a selection of 3+ clears all.</li>
+    </ul>
+    <button @click="showInfo = false">Got it!</button>
+  </div>
+
+  <div class="slots-grid">
+    <div
+      v-for="(slot, index) in timeSlots"
+      :key="index"
+      class="slot"
+      :class="{ selected: selectedSlots.includes(index) }"
+      @click="toggleTimeSlot(index)"
+    >
+      {{ slot }}
     </div>
-  </template>
-  
-  <script>
-  import QRCode from "qrcode";
-  import { getDatabase, ref, set } from "firebase/database";
-  
-  export default {
-    data() {
-      return {
-        courseCode: "",
-        selectedSection: "",
-        selectedSlots: [],
-        sections: Array.from({ length: 9 }, (_, i) => i + 1), // Sections 1-9
-        timeSlots: Array.from({ length: 24 }, (_, i) => `${i + 1}:00 - ${i + 2}:00`)
-      };
+  </div>
+</div>
+ </div>
+   <!-- QR Code Section (Only appears when QR is generated) -->
+<div v-if="qrGenerated" class="qr-wrapper">
+  <div class="qr-container">
+    <canvas ref="qrCanvas"></canvas>
+    <p class="qr-text">Scan the QR code using the <strong>MonitorMate</strong> app.</p>
+  </div>
+</div>
+
+  </div>
+</template>
+
+<script>
+import QRCode from "qrcode";
+import { getDatabase, ref, set } from "firebase/database";
+import navigation_bar from '@/components/navigation_bar.vue'
+
+export default {
+  mounted() {
+  document.querySelector('input[type="date"]').addEventListener('click', function() {
+    this.style.backgroundColor = '#333'; // Dark grey background
+    this.style.color = 'white'; // White text
+  });
+},
+  components: {
+      navigation_bar
     },
-    computed: {
-      canGenerateQR() {
-        return this.courseCode && this.selectedSection && this.selectedSlots.length > 0;
-      }
+  data() {
+    return {
+      courseCode: "",
+      selectedDate: "",
+      selectedSection: "",
+      selectedSlots: [],
+      qrGenerated: false, // Track if QR is generated
+      sessionID: "", // Store session ID for ending attendance
+      showInfo: false, // Controls the visibility of the info box
+      qrButtonDisabled: false, // Added to disable button
+      sections: Array.from({ length: 9 }, (_, i) => i + 1),
+      timeSlots: Array.from({ length: 24 }, (_, i) => {
+  let hour = (i % 12) || 12;
+  let period = i < 12 ? "AM" : "PM";
+  let nextHour = ((i + 1) % 12) || 12;
+  let nextPeriod = (i + 1) === 24 ? "AM" : (i + 1) < 12 ? "AM" : "PM"; // Fixes 12 AM issue
+  return `${hour}:00 ${period} - ${nextHour}:00 ${nextPeriod}`;
+}),
+
+    };
+  },
+  computed: {
+    canGenerateQR() {
+      return this.isCourseCodeValid && this.courseCode && this.selectedDate && this.selectedSection && this.selectedSlots.length > 0;
     },
-    methods: {
-      async generateQRCode() {
-        const sessionID = `session_${Date.now()}`;
-        const qrCodeValue = `${this.courseCode}/S${this.selectedSection}/${sessionID}`;
-  
-        // Store in Firebase
-        const db = getDatabase();
-        set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${sessionID}`), {
-          qrCode: qrCodeValue,
-          timestamp: new Date().toISOString(),
-          timeSlots: this.selectedSlots,
-          students: {}
-        });
-  
-        // Generate QR Code on Canvas
-        QRCode.toCanvas(
-          this.$refs.qrCanvas,
-          qrCodeValue,
-          { width: 200 },
-          (error) => {
-            if (error) console.error(error);
-          }
-        );
-      }
+    isCourseCodeValid() {
+    // Adjust regex to match your course code format (e.g., "CS101", "IT-2023")
+    return /^[A-Z]{4}\d{4}$/.test(this.courseCode); // Strictly 4 letters + 4 digits
+  }
+  },
+  methods: {
+    
+    formatCourseID() {
+      this.courseCode = this.courseCode.toUpperCase().replace(/\s+/g, "");
+    },
+    toggleTimeSlot(index) {
+  if (this.selectedSlots.includes(index)) {
+    // If the user deselects a middle slot in a selection of more than 3 slots, clear all selections
+    const minSlot = Math.min(...this.selectedSlots);
+    const maxSlot = Math.max(...this.selectedSlots);
+
+    if (this.selectedSlots.length > 2 && index > minSlot && index < maxSlot) {
+      this.selectedSlots = []; // Clear all selections if a middle slot is removed
+    } else {
+      // Otherwise, just remove the clicked slot
+      this.selectedSlots = this.selectedSlots.filter(slot => slot !== index);
     }
-  };
-  </script>
-  
-  <style>
-  .container {
-    max-width: 400px;
-    margin: auto;
-    text-align: center;
+  } 
+  else if (this.selectedSlots.length === 0) {
+    this.selectedSlots.push(index); // First slot selection
+  } 
+  else {
+    const minSlot = Math.min(...this.selectedSlots);
+    const maxSlot = Math.max(...this.selectedSlots);
+
+    if (index < minSlot) {
+      this.selectedSlots = []; // Deselect all if selecting before the first slot
+    } 
+    else if (index === maxSlot + 1) {
+      this.selectedSlots.push(index); // Allow continuous selection after the last slot
+    } 
+    else if (this.selectedSlots.length === 1) {
+      let start = Math.min(this.selectedSlots[0], index);
+      let end = Math.max(this.selectedSlots[0], index);
+      this.selectedSlots = [];
+      for (let i = start; i <= end; i++) {
+        this.selectedSlots.push(i);
+      }
+    } 
+    else {
+      this.selectedSlots = []; // Reset selection in any other case
+    }
   }
-  .time-slots {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+},
+async generateQRCode() {
+  const formattedDate = this.selectedDate.replace(/-/g, "");
+  this.sessionID = `session_${formattedDate}_${Date.now()}`;
+  const qrCodeValue = `${this.courseCode}/S${this.selectedSection}/${this.sessionID}`;
+
+  // Store in Firebase
+  const db = getDatabase();
+  set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`), {
+    date: this.selectedDate,
+    qrCode: qrCodeValue,
+    timestamp: new Date().toISOString(),
+    timeSlots: this.selectedSlots.map(i => this.timeSlots[i]),
+    students: {},
+    expired: false
+  });
+
+  this.qrGenerated = true;
+  this.qrButtonDisabled = true; // Disable the button after generating the QR
+
+  this.$nextTick(() => {
+    QRCode.toCanvas(this.$refs.qrCanvas, qrCodeValue, {
+      width: 400,
+      color: { dark: "#90ee90", light: "#000000" }
+    }, (error) => {
+      if (error){
+            console.error(error);
+          }
+
+          // Add image to the center of the QR Code
+          const canvas = this.$refs.qrCanvas;
+          const ctx = canvas.getContext("2d");
+          const img = new Image();
+          img.src = require('@/assets/mm.png'); // Logo in QR code
+          img.onload = function () {
+            const newWidth = 160;
+            const newHeight = 70;
+            const x = (canvas.width - newWidth) / 2;
+            const y = (canvas.height - newHeight) / 2;
+            ctx.drawImage(img, x, y, newWidth, newHeight);
+          };
+    });
+  });
+},
+async endAttendance() {
+  if (!this.sessionID) return;
+
+  const db = getDatabase();
+  set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/expired`), true);
+
+  this.qrGenerated = false;
+  this.qrButtonDisabled = false; // Re-enable the button
+  alert("Attendance session ended. QR Code is now expired.");
+}
   }
-  .time-slots label {
-    margin: 5px;
-    cursor: pointer;
-  }
-  button {
-    margin-top: 15px;
-  }
-  </style>
-  
+};
+</script>
+
+<style>
+/* Darker container background */
+.container {
+  max-width: 1450px;
+  margin: auto;
+  text-align: center;
+  background: #111; /* Darker grey */
+  padding: 20px;
+  border-radius: 10px;
+  margin-top: 170px; 
+  border: 3px solid rgb(84, 84, 84); /* Added white border */
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Align inputs to the left */
+.form-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 180px;
+}
+
+.input-section {
+  flex: 1;
+}
+
+.form-group {
+  text-align: left;
+  margin-bottom: 15px;
+}
+
+label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 5px;
+  color: white; /* Changed to white */
+}
+
+/* Make the heading white */
+.container h2 {
+  color: white;
+}
+
+input, select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 5px;
+  border: 2px solid white; /* White border */
+  font-size: 16px;
+  background-color: #333; /* Dark grey background */
+  color: white; /* White text */
+}
+
+/* When input is focused */
+input:focus, select:focus {
+  outline: none;
+  border-color: white; /* Keep border white */
+}
+
+/* Placeholder text color */
+input::placeholder {
+  color: rgba(255, 255, 255, 0.7); /* Light white */
+}
+
+/* Dropdown arrow color */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg fill='white' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 15px;
+  padding-right: 30px; /* Space for dropdown arrow */
+}
+/* Dark grey background for the input */
+input[type="date"] {
+  background-color: #333;
+  color: white;
+  border: 2px solid white;
+  padding: 10px;
+  border-radius: 5px;
+  font-size: 16px;
+}
+
+/* Change the text inside the date input */
+input[type="date"]::-webkit-datetime-edit {
+  color: white;
+}
+
+/* Hide default calendar icon and add custom styling */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1); /* Turns the icon white */
+  cursor: pointer;
+}
+
+/* Remove default styles for a cleaner look */
+input, select {
+  box-shadow: none;
+  appearance: none;
+}
+
+/* Header container for label + info icon */
+.slot-header {
+  display: flex;
+  justify-content: space-between; /* Aligns label to left, icon to right */
+  align-items: center;
+  width: 100%;
+  margin-bottom: 15px; /* Creates space between text and slot box */
+}
+
+/* Make sure .time-slots is relative so the info box is positioned inside it */
+.time-slots {
+  position: relative;
+}
+
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(6, auto);
+  gap: 12px;
+}
+
+.slot {
+  background: #b0b0b0;
+  padding: 15px;
+  border-radius: 8px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 15px;
+  transition: background 0.3s;
+  font-weight: bold;
+  width: 150px;
+}
+
+.slot:hover {
+  background: #888;
+}
+
+.slot.selected {
+  background: lightgreen;
+  color: rgb(0, 0, 0);
+}
+
+/* Button styles */
+button {
+  background: lightgreen;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.3s;
+  width: 100%;
+  padding: 12px;
+  border-radius: 5px;
+  border: none;
+  font-size: 16px;
+  margin-top: 10px;
+}
+
+button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  color: #333;
+}
+
+button:hover:not(:disabled) {
+  background: lightgreen;
+}
+
+.button-group {
+  display: flex;
+  gap: 20px; /* Adjust spacing */
+  justify-content: center; /* Center the buttons */
+}
+
+.qr-btn, .end-btn {
+  flex: 1; /* Ensure equal size */
+  color: rgb(15, 91, 42);
+}
+
+/* Wrapper to align QR code to the left */
+.qr-wrapper {
+  display: flex;
+  justify-content: flex-start; /* Align to the left */
+  margin-top: 30px;
+}
+
+/* QR Code Container */
+.qr-container {
+  padding: 15px;
+  background: rgb(0, 0, 0);
+  border-radius: 10px;
+  display: inline-block;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
+  border: 3px solid rgb(84, 84, 84); /* Border around QR code */
+  text-align: center;
+}
+
+/* QR Code Instruction Text */
+.qr-text {
+  margin-top: 5px;
+  font-size: 16px;
+  font-weight: bold;
+  color: rgb(255, 0, 0);
+}
+
+.error {
+  color: red;
+  font-size: 14px;
+  margin-top: 5px;
+}
+
+/* Info Icon */
+.info-icon {
+  font-size: 20px;
+  color: lightgreen;
+  cursor: pointer;
+  transition: color 0.3s;
+  margin-left: 10px; /* Moves the icon slightly to the left */
+}
+
+.info-icon:hover {
+  color: white;
+}
+/* Floating Info Box */
+.info-box {
+  position: absolute;
+  top: 30px; /* Adjust distance below the icon */
+  right: 0; /* Aligns to the right (next to the icon) */
+  background: #222; /* Dark background */
+  color: white;
+  padding: 10px;
+  border-radius: 5px;
+  width: 250px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  text-align: left;
+}
+/* Make sure list items align properly */
+.info-box ul {
+  padding-left: 20px; /* Indent the list */
+  margin: 10px 0;
+}
+
+.info-box li {
+  margin-bottom: 5px;
+}
+
+/* Close button inside the box */
+.info-box button {
+  background: lightgreen;
+  color: black;
+  font-weight: bold;
+  border: none;
+  padding: 5px 10px;
+  cursor: pointer;
+  display: block;
+  margin: 10px auto 0;
+  border-radius: 5px;
+}
+
+.info-box button:hover {
+  background: green;
+  color: white;
+}
+
+</style>

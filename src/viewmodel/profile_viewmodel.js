@@ -19,16 +19,58 @@ const ProfileViewModel = reactive({
 
   facultyCourses: {
     "Faculty of Built Environment and Surveying": [
-      "Bachelor of Urban and Regional Planning",
-      "Bachelor of Quantity Surveying",
+      "Urban and Regional Planning",
+      "Quantity Surveying",
+      "Land Administration and Development",
+      "Science in Architecture",
+      "Science in Geoinformatics",
+      "Science in Property Management",
+      "Landscape Architecture"
     ],
     "Faculty of Computing": [
-      "Bachelor of Computer Science (Software Engineering)",
-      "Bachelor of Computer Science (Data Engineering)",
+      "Software Engineering",
+      "Data Engineering",
+      "Computer Network and Security",
+      "Graphics and Multimedia Software",
+      "Bioinformatics",
+      "Artificial Intelligence"
     ],
     "Faculty of Engineering": [
-      "Bachelor of Engineering (Civil)",
-      "Bachelor of Engineering (Electrical)",
+      "Civil",
+      "Electrical",
+      "Mechanical",
+      "Chemical",
+      "Biomedical",
+      "Petroleum",
+      "Geomatic",
+      "Environmental",
+      "Aerospace",
+      "Naval Architecture and Offshore Engineering",
+      "Electronic",
+      "Mechatronics",
+      "Computer and Communication"
+    ],
+    "Faculty of Science": [
+      "Industrial Chemistry",
+      "Physics",
+      "Industrial Mathematics",
+      "Biology",
+      "Chemistry",
+      "Mathematics",
+      "Statistics"
+    ],
+    "Faculty of Social Sciences and Humanities": [
+      "Management (Technology)",
+      "Management (Marketing)",
+      "Management (Human Resource Development)",
+      "Science in Psychology",
+      "Science in Education (TESL)",
+      "Science in Education (Mathematics)",
+      "Science in Education (Physics)",
+      "Science in Education (Chemistry)",
+      "Science in Education (Biology)",
+      "Science in Education (Islamic Studies)",
+      "Science in Education (Guidance and Counseling)"
     ],
   },
 
