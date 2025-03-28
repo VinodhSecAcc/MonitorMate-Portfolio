@@ -33,7 +33,10 @@
   
           <!-- Generate QR & End Attendance Buttons -->
   <div class="button-group">
-    <button :disabled="!canGenerateQR" @click="generateQRCode" class="qr-btn">Generate QR Attendance</button>
+    <button :disabled="!canGenerateQR || qrButtonDisabled" @click="generateQRCode" class="qr-btn">
+    Generate QR Attendance
+  </button>
+  
     <button :disabled="!qrGenerated" @click="endAttendance" class="end-btn">Close QR Attendance</button>
   </div>
   
@@ -106,6 +109,7 @@
         qrGenerated: false, // Track if QR is generated
         sessionID: "", // Store session ID for ending attendance
         showInfo: false, // Controls the visibility of the info box
+        qrButtonDisabled: false, // Added to disable button
         sections: Array.from({ length: 9 }, (_, i) => i + 1),
         timeSlots: Array.from({ length: 24 }, (_, i) => {
     let hour = (i % 12) || 12;
@@ -170,7 +174,7 @@
       }
     }
   },
-      async generateQRCode() {
+  async generateQRCode() {
     const formattedDate = this.selectedDate.replace(/-/g, "");
     this.sessionID = `session_${formattedDate}_${Date.now()}`;
     const qrCodeValue = `${this.courseCode}/S${this.selectedSection}/${this.sessionID}`;
@@ -183,56 +187,46 @@
       timestamp: new Date().toISOString(),
       timeSlots: this.selectedSlots.map(i => this.timeSlots[i]),
       students: {},
-      expired: false // QR is active
+      expired: false
     });
   
-    this.qrGenerated = true; // Enable QR Container
+    this.qrGenerated = true;
+    this.qrButtonDisabled = true; // Disable the button after generating the QR
   
-    // Wait for Vue to update the DOM before rendering the QR code
     this.$nextTick(() => {
-      QRCode.toCanvas(
-        this.$refs.qrCanvas,
-        qrCodeValue,
-        {
-          width: 400, // QR code size
-          color: {
-            dark: "#90ee90", // QR code color (light green)
-            light: "#000000" // Background color to black
-          }
-        },
-        (error) => {
-          if (error) {
-            console.error(error);
-          }
+      QRCode.toCanvas(this.$refs.qrCanvas, qrCodeValue, {
+        width: 400,
+        color: { dark: "#90ee90", light: "#000000" }
+      }, (error) => {
+        if (error){
+              console.error(error);
+            }
   
-          // Add image to the center of the QR Code
-          const canvas = this.$refs.qrCanvas;
-          const ctx = canvas.getContext("2d");
-          const img = new Image();
-          img.src = require('@/assets/mm.png'); // Logo in QR code
-          img.onload = function () {
-            const newWidth = 160;
-            const newHeight = 70;
-            const x = (canvas.width - newWidth) / 2;
-            const y = (canvas.height - newHeight) / 2;
-            ctx.drawImage(img, x, y, newWidth, newHeight);
-          };
-        }
-      );
+            // Add image to the center of the QR Code
+            const canvas = this.$refs.qrCanvas;
+            const ctx = canvas.getContext("2d");
+            const img = new Image();
+            img.src = require('@/assets/mm.png'); // Logo in QR code
+            img.onload = function () {
+              const newWidth = 160;
+              const newHeight = 70;
+              const x = (canvas.width - newWidth) / 2;
+              const y = (canvas.height - newHeight) / 2;
+              ctx.drawImage(img, x, y, newWidth, newHeight);
+            };
+      });
     });
   },
+  async endAttendance() {
+    if (!this.sessionID) return;
   
+    const db = getDatabase();
+    set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/expired`), true);
   
-    async endAttendance() {
-      if (!this.sessionID) return;
-  
-      const db = getDatabase();
-      set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/expired`), true);
-  
-      this.qrGenerated = false; // Disable End Attendance button
-      alert("Attendance session ended. QR Code is now expired.");
-    }
-  
+    this.qrGenerated = false;
+    this.qrButtonDisabled = false; // Re-enable the button
+    alert("Attendance session ended. QR Code is now expired.");
+  }
     }
   };
   </script>
@@ -505,3 +499,4 @@
   
   </style>
   
+    

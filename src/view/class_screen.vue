@@ -74,12 +74,29 @@
   </div>
 </div>
  </div>
-   <!-- QR Code Section (Only appears when QR is generated) -->
-<div v-if="qrGenerated" class="qr-wrapper">
-  <div class="qr-container">
-    <canvas ref="qrCanvas"></canvas>
+<!-- Container for QR Code (Left) and Scanned Students (Right) -->
+<div class="scanned-students-container">
+  <!-- QR Code Display (Left-Aligned) -->
+  <div class="qr-code">
+    <div v-if="qrGenerated" class="qr-wrapper">
+      <div class="qr-container">
+    <canvas v-show="qrGenerated" ref="qrCanvas"></canvas>
     <p class="qr-text">Scan the QR code using the <strong>MonitorMate</strong> app.</p>
   </div>
+</div>
+  </div>
+
+  <!-- Student List (Right-Aligned) -->
+  <div v-if="studentsList.length > 0" class="students-list">
+    <h3>Scanned Students</h3>
+    <div v-for="(student, index) in studentsList" :key="index" class="student">
+      <div class="student-info">
+        <p>{{ student.username }} &nbsp; {{ student.universityId }}</p>
+        <p class="scan-time">{{ student.scanTime }}</p>
+      </div>
+      <hr v-if="index < studentsList.length - 1" /> <!-- Line separator -->
+    </div>
+    </div>
 </div>
 
   </div>
@@ -87,7 +104,7 @@
 
 <script>
 import QRCode from "qrcode";
-import { getDatabase, ref, set } from "firebase/database";
+import { getDatabase, ref, set, onValue } from "firebase/database";
 import navigation_bar from '@/components/navigation_bar.vue'
 
 export default {
@@ -110,6 +127,7 @@ export default {
       sessionID: "", // Store session ID for ending attendance
       showInfo: false, // Controls the visibility of the info box
       qrButtonDisabled: false, // Added to disable button
+      studentsList: [], // List of students who scanned the QR
       sections: Array.from({ length: 9 }, (_, i) => i + 1),
       timeSlots: Array.from({ length: 24 }, (_, i) => {
   let hour = (i % 12) || 12;
@@ -174,12 +192,12 @@ export default {
     }
   }
 },
+
 async generateQRCode() {
   const formattedDate = this.selectedDate.replace(/-/g, "");
   this.sessionID = `session_${formattedDate}_${Date.now()}`;
   const qrCodeValue = `${this.courseCode}/S${this.selectedSection}/${this.sessionID}`;
 
-  // Store in Firebase
   const db = getDatabase();
   set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`), {
     date: this.selectedDate,
@@ -191,32 +209,49 @@ async generateQRCode() {
   });
 
   this.qrGenerated = true;
-  this.qrButtonDisabled = true; // Disable the button after generating the QR
+  this.qrButtonDisabled = true;
 
   this.$nextTick(() => {
     QRCode.toCanvas(this.$refs.qrCanvas, qrCodeValue, {
       width: 400,
       color: { dark: "#90ee90", light: "#000000" }
-    }, (error) => {
-      if (error){
-            console.error(error);
-          }
+    },(error) => {
+        if (error){
+              console.error(error);
+            }
+  
+            // Add image to the center of the QR Code
+            const canvas = this.$refs.qrCanvas;
+            const ctx = canvas.getContext("2d");
+            const img = new Image();
+            img.src = require('@/assets/mm.png'); // Logo in QR code
+            img.onload = function () {
+              const newWidth = 160;
+              const newHeight = 70;
+              const x = (canvas.width - newWidth) / 2;
+              const y = (canvas.height - newHeight) / 2;
+              ctx.drawImage(img, x, y, newWidth, newHeight);
+            };
+      });
 
-          // Add image to the center of the QR Code
-          const canvas = this.$refs.qrCanvas;
-          const ctx = canvas.getContext("2d");
-          const img = new Image();
-          img.src = require('@/assets/mm.png'); // Logo in QR code
-          img.onload = function () {
-            const newWidth = 160;
-            const newHeight = 70;
-            const x = (canvas.width - newWidth) / 2;
-            const y = (canvas.height - newHeight) / 2;
-            ctx.drawImage(img, x, y, newWidth, newHeight);
-          };
-    });
+    // Start listening for students who scan the QR
+    this.listenForStudents();
   });
 },
+
+listenForStudents() {
+  const db = getDatabase();
+  const studentsRef = ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/students`);
+
+  onValue(studentsRef, (snapshot) => {
+    if (snapshot.exists()) {
+      this.studentsList = Object.values(snapshot.val()); // Convert object to array
+    } else {
+      this.studentsList = [];
+    }
+  });
+},
+
 async endAttendance() {
   if (!this.sessionID) return;
 
@@ -343,9 +378,7 @@ input, select {
 }
 
 /* Make sure .time-slots is relative so the info box is positioned inside it */
-.time-slots {
-  position: relative;
-}
+
 
 .slots-grid {
   display: grid;
@@ -421,6 +454,7 @@ button:hover:not(:disabled) {
 /* QR Code Container */
 .qr-container {
   padding: 15px;
+  padding-left: 10px;
   background: rgb(0, 0, 0);
   border-radius: 10px;
   display: inline-block;
@@ -496,5 +530,81 @@ button:hover:not(:disabled) {
   background: green;
   color: white;
 }
+
+.students-container {
+  margin-top: 20px;
+  background: #222;
+  padding: 15px;
+  border-radius: 10px;
+  text-align: left;
+  max-height: 250px; /* Limit height */
+  overflow-y: auto; /* Scrollable */
+  border: 2px solid lightgreen;
+}
+
+.students-container h3 {
+  color: lightgreen;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.students-list {
+  width: 730px;
+  border: 3px solid rgb(84, 84, 84);
+  padding: 10px;
+  border-radius: 5px;
+  background-color: rgb(0, 0, 0);
+  color: white;
+  text-align: center; /* Center all content */
+  margin-left: auto; /* Center horizontally */
+  margin-right: auto; /* Center horizontally */
+  margin-top: 30px;
+}
+
+.student-info {
+  display: flex;
+  flex-direction: column; /* Stack username and scan time */
+  align-items: center; /* Center align */
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.student {
+  padding-bottom: 5px;
+}
+
+.student-info p {
+  margin: 5px 0;
+  font-size: 16px;
+}
+
+.scan-time {
+  font-size: 14px;
+  color: lightgray; /* Slightly lighter for distinction */
+}
+
+hr {
+  border: 0;
+  height: 1px;
+  background: white; /* White separator for visibility */
+  margin: 5px 0;
+}
+
+canvas {
+  margin-left: 20px; /* Space between student list & QR code */
+}
+
+.scanned-students-container {
+  display: flex;
+  justify-content: space-between; /* QR code on left, student list on right */
+  align-items: flex-start; /* Align items to top */
+  margin-top: 10px;
+}
+
+.qr-code {
+  flex: 1; /* Take available space */
+  text-align: left; /* Align to left */
+}
+
 
 </style>

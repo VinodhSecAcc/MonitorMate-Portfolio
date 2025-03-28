@@ -55,12 +55,19 @@
 <script>
 import { useSignInViewModel } from "@/viewmodel/signin_viewmodel";
 import { FontAwesomeIcon } from "@fortawesome/vue-fontawesome";
+import { useHead } from "@vueuse/head";
 
 export default {
   components: {
     FontAwesomeIcon,
   },
   setup() {
+    useHead({
+      title: 'Profile',
+      meta: [
+        { name: 'description', content: 'This is a sample description' }
+      ]
+    });
     return useSignInViewModel();
   },
 };
