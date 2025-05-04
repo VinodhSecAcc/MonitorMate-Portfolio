@@ -73,9 +73,7 @@ export default {
 };
 </script>
 
-
 <style scoped>
-/* Remove unwanted margins, paddings, and force full-screen */
 * {
   margin: 0;
   padding: 0;
@@ -85,8 +83,7 @@ export default {
 html, body {
   height: 100%;
   width: 100%;
-  overflow: hidden;
-  display: flex;
+  font-family: sans-serif;
 }
 
 /* Ensure container covers full screen */
@@ -94,9 +91,7 @@ html, body {
   display: flex;
   width: 100vw;
   height: 100vh;
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
 }
 
 /* Left Section (Sign-In) - With background image */
@@ -116,11 +111,11 @@ html, body {
   width: 100%;
   max-width: 350px;
   padding: 20px;
-  background: rgba(255, 255, 255, 0.05); /* Reduced blur effect */
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.5);
   box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
   border-radius: 15px;
-  backdrop-filter: blur(3px); /* Reduced blur */
+  backdrop-filter: blur(3px);
 }
 
 /* Welcome text */
@@ -213,7 +208,7 @@ html, body {
   background: lightgreen;
   height: 100vh;
   color: black;
-  flex-direction: column; /* Ensure vertical stacking */
+  flex-direction: column;
 }
 
 /* Logo */
@@ -239,15 +234,15 @@ html, body {
 }
 
 .info-box ul {
-  list-style-type: disc; /*  Standard bullet points */
-  list-style-position: outside; /* Ensures bullets stay outside */
-  padding-left: 20px; /* Adjust left padding for bullets */
-  text-align: left; /* Aligns text properly */
+  list-style-type: disc;
+  list-style-position: outside;
+  padding-left: 20px;
+  text-align: left;
 }
 
 .info-box li {
-  text-indent: 0px; /* Adjust this to align second lines with the first */
-  margin-left: 10px; /* Ensures text lines up correctly */
+  text-indent: 0px;
+  margin-left: 10px;
   padding-left: 0px;
   margin-bottom: 10px;
   font-size: 20px;
@@ -256,7 +251,7 @@ html, body {
 
 /* Signup Text Below Sign-in Button */
 .signup-text {
-  margin-top: 20px; /* Moved text down */
+  margin-top: 20px;
   font-size: 14px;
   color: white;
 }
@@ -272,14 +267,14 @@ html, body {
 }
 
 .icon {
-    color: lightgreen;
-    margin-right: 10px;
-  }
+  color: lightgreen;
+  margin-right: 10px;
+}
 
-  .toggle-password {
-    cursor: pointer;
-    color: lightgreen;
-  }
+.toggle-password {
+  cursor: pointer;
+  color: lightgreen;
+}
 
 /* Lecturer & Staff Edition Label */
 .edition-label {
