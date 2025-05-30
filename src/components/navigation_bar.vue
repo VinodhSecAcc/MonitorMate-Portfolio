@@ -5,13 +5,13 @@
         <img :src="userProfilePic" alt="Profile" class="profile-pic" />
         <div class="nav-links">
           <span @click="navigate('dashboard')">Home</span>
-          <span @click="navigate('class')">Class</span>
-          <span @click="navigate('exam')">Exam</span>
-          <span @click="navigate('track')">Track Students</span>
+          <span @click="navigate('class')">Attendance</span>
           <span @click="navigate('report')">Report</span>
           <span @click="navigate('profile')">Profile</span>
+          <span @click="navigate('future')">Coming Soon</span>
+          
         </div>
-        <span class="logout-icon" @click="logout">
+        <span class="logout-icon" @click="onLogoutClick">
           <font-awesome-icon :icon="['fas', 'sign-out-alt']" /> Logout
         </span>
       </nav>
@@ -30,21 +30,35 @@
       FontAwesomeIcon,
     },
     setup() {
-      const { userProfilePic } = NavigationViewModel();
-      return { userProfilePic };
-    },
+    const { userProfilePic, isLoggedIn, currentUser, handleLogout } = NavigationViewModel();
+    
+    const onLogoutClick = async () => {
+      const result = await handleLogout();
+      if (result.success) {
+        // Handle successful logout (e.g., redirect to login page)
+        console.log("Logout successful");
+      } else {
+        // Handle logout error
+        console.error("Logout failed:", result.error);
+      }
+    };
+    
+    return {
+      userProfilePic,
+      isLoggedIn,
+      currentUser,
+      onLogoutClick
+    };
+  },
     methods: {
       navigate(page) {
         this.$router.push(`/${page}`);
-      },
-      logout() {
-        console.log("Logging out...");
       },
     },
   };
   </script>
   
-  <style scoped>
+  <style >
   /* Container for Title + Navigation */
   .nav-container {
     display: flex;
@@ -64,7 +78,7 @@
     width: 300px; /* Fixed width */
     text-align: center;
     margin-right: 20px; /* Space between text and nav */
-    margin-left: -8%; /* Space between text and screen edge */
+    margin-left: -20.5%; /* Space between text and screen edge */
   }
   
   /* Fixed Size Navigation Bar */
@@ -74,7 +88,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    width: 1000px; /* Fixed width */
+    width: 845px; /* Fixed width */
     padding: 12px 25px;
     border-radius: 20px;
     box-shadow: 0px 4px 15px rgba(255, 255, 255, 0.2);

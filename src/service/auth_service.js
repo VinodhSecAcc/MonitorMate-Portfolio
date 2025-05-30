@@ -1,4 +1,4 @@
-import { getAuth, createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
 import { firebaseApp } from "./configuration/firebase";
 import { FirebaseService } from "./firebase_service";
 import { ref, update, getDatabase } from "firebase/database";
@@ -81,5 +81,119 @@ export const AuthService = {
     } catch (error) {
       return { success: false, error: error.message };
     }
+  },
+
+  async forgetPassword(email) {
+  try {
+    console.log("🔄 Attempting to send password reset email to:", email);
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      throw new Error("Please enter a valid email address.");
+    }
+
+    // Send password reset email (remove the email existence check as it's not reliable)
+    await sendPasswordResetEmail(auth, email);
+
+    console.log("✅ Password reset email sent successfully");
+    return { 
+      success: true, 
+      message: "If an account with this email exists, you will receive a password reset link shortly." 
+    };
+
+  } catch (error) {
+    console.error("⚠️ Error sending password reset email:", error);
+
+    // Handle specific Firebase Auth errors
+    const errorCode = error.code;
+    let errorMessage = "An unexpected error occurred. Please try again.";
+
+    switch (errorCode) {
+      case 'auth/user-not-found':
+        // Don't reveal if user exists or not for security
+        errorMessage = "If an account with this email exists, you will receive a password reset link shortly.";
+        break;
+      case 'auth/invalid-email':
+        errorMessage = "Please enter a valid email address.";
+        break;
+      case 'auth/too-many-requests':
+        errorMessage = "Too many requests. Please try again later.";
+        break;
+      case 'auth/network-request-failed':
+        errorMessage = "Network error. Please check your connection and try again.";
+        break;
+      default:
+        errorMessage = error.message;
+    }
+
+    return { 
+      success: false, 
+      error: errorMessage 
+    };
+  }
+},
+
+  async logoutUser() {
+    try {
+      const currentUser = auth.currentUser;
+      
+      if (!currentUser) {
+        console.log("No user is currently signed in");
+        return { success: false, error: "No user is currently signed in" };
+      }
+
+      const userId = currentUser.uid;
+      const userEmail = currentUser.email;
+      console.log("🚪 Logging out user:", userId, "Email:", userEmail);
+
+      // Update user's online status or last seen in database (optional)
+      try {
+        const userRef = ref(db, `users/lecturers/${userId}/auth_info`);
+        await update(userRef, { 
+          last_logout: new Date().toISOString(),
+          is_online: false 
+        });
+      } catch (dbError) {
+        console.warn("Could not update user status in database:", dbError.message);
+        // Continue with logout even if database update fails
+      }
+
+      // Sign out from Firebase Auth
+      await signOut(auth);
+      
+      console.log("✅ User successfully logged out");
+      return { 
+        success: true, 
+        userId: userId,
+        userEmail: userEmail 
+      };
+
+    } catch (error) {
+      console.error("⚠️ Error during logout:", error.message);
+      return { success: false, error: error.message };
+    }
+  },
+
+  // Alternative logout method with callback for custom navigation
+  async logoutUserWithCallback(onLogoutSuccess) {
+    const result = await this.logoutUser();
+    
+    if (result.success && onLogoutSuccess) {
+      // Execute custom callback (like navigation)
+      onLogoutSuccess(result);
+    }
+    
+    return result;
+  },
+
+  // Get current user information
+  getCurrentUser() {
+    return auth.currentUser;
+  },
+
+  // Check if user is authenticated
+  isUserAuthenticated() {
+    return auth.currentUser !== null;
   }
 };

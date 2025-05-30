@@ -81,7 +81,7 @@
     },
     setup() {
       useHead({
-      title: 'Profile',
+      title: 'Profile - MonitorMate',
       meta: [
         { name: 'description', content: 'This is a sample description' }
       ]
@@ -96,7 +96,7 @@
   /* Full black background */
   body {
     
-    background: url("@/assets/background.jpg") ;
+   /* background: url("@/assets/background.jpg") ;*/
     margin: 0;
     padding: 0;
   }

@@ -31,6 +31,24 @@
           </select>
         </div>
 
+        <!-- Class/Exam Toggle -->
+        <div class="form-group">
+          <label>Attendance Type</label>
+          <div class="toggle-container">
+            <div class="toggle-switch" @click="isExam = !isExam">
+              <div class="toggle-option" :class="{ active: !isExam }">
+                <i class="fas fa-chalkboard-teacher"></i>
+                Class
+              </div>
+              <div class="toggle-option" :class="{ active: isExam }">
+                <i class="fas fa-clipboard-list"></i>
+                Exam
+              </div>
+              <div class="toggle-slider" :class="{ 'slide-right': isExam }"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Generate QR & End Attendance Buttons -->
 <div class="button-group">
   <button :disabled="!canGenerateQR || qrButtonDisabled" @click="generateQRCode" class="qr-btn">
@@ -88,15 +106,23 @@
 
   <!-- Student List (Right-Aligned) -->
   <div v-if="studentsList.length > 0" class="students-list">
-    <h3>Scanned Students</h3>
+    <h3>Scanned Students ({{ isExam ? 'Exam' : 'Class' }})</h3>
     <div v-for="(student, index) in studentsList" :key="index" class="student">
       <div class="student-info">
         <p>{{ student.username }} &nbsp; {{ student.universityId }}</p>
-        <p class="scan-time">{{ student.scanTime }}</p>
+        <p class="scan-time">{{ formatScanTime(student.scanTime) }}</p>
       </div>
       <hr v-if="index < studentsList.length - 1" /> <!-- Line separator -->
     </div>
+    
+    <!-- Track Students Button -->
+    <div class="track-button-container">
+      <button @click="navigateToTrackScreen" class="track-btn">
+        <i class="fas fa-chart-line"></i>
+        Track Students
+      </button>
     </div>
+  </div>
 </div>
 
   </div>
@@ -104,25 +130,37 @@
 
 <script>
 import QRCode from "qrcode";
-import { getDatabase, ref, set, onValue } from "firebase/database";
-import navigation_bar from '@/components/navigation_bar.vue'
+import { getDatabase, ref, set, onValue, update } from "firebase/database";
+import navigation_bar from '@/components/navigation_bar.vue';
+import { useHead } from '@vueuse/head';
+import { getAuth } from "firebase/auth";
 
 export default {
+setup() {
+    useHead({
+      title: 'Attendance - MonitorMate',
+      meta: [{ name: 'description', content: 'This is a sample description' }]
+    });
+  },
   mounted() {
   document.querySelector('input[type="date"]').addEventListener('click', function() {
     this.style.backgroundColor = '#333'; // Dark grey background
     this.style.color = 'white'; // White text
   });
+   const auth = getAuth();
+  this.currentUser = auth.currentUser;
 },
   components: {
       navigation_bar
     },
   data() {
     return {
+      currentUser: null,
       courseCode: "",
       selectedDate: "",
       selectedSection: "",
       selectedSlots: [],
+      isExam: false, // New property for attendance type
       qrGenerated: false, // Track if QR is generated
       sessionID: "", // Store session ID for ending attendance
       showInfo: false, // Controls the visibility of the info box
@@ -153,6 +191,78 @@ export default {
     formatCourseID() {
       this.courseCode = this.courseCode.toUpperCase().replace(/\s+/g, "");
     },
+    
+    // NEW METHOD: Format scan time to 12-hour format with proper padding
+    formatScanTime(timeString) {
+      if (!timeString) return '';
+      
+      try {
+        // If timeString is already formatted, return as is
+        if (timeString.includes('AM') || timeString.includes('PM')) {
+          return timeString;
+        }
+        
+        // Parse the time string (assuming it's in format "HH:MM:SS" or similar)
+        const date = new Date(timeString);
+        
+        // If it's a valid date object
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleTimeString('en-US', {
+            hour12: true,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+          });
+        }
+        
+        // If it's just a time string like "14:8:1"
+        const timeParts = timeString.split(':');
+        if (timeParts.length >= 3) {
+          let hours = parseInt(timeParts[0]);
+          let minutes = parseInt(timeParts[1]);
+          let seconds = parseInt(timeParts[2]);
+          
+          const period = hours >= 12 ? 'PM' : 'AM';
+          hours = hours % 12 || 12; // Convert to 12-hour format
+          
+          return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${period}`;
+        }
+        
+        return timeString; // Return original if parsing fails
+      } catch (error) {
+        console.error('Error formatting time:', error);
+        return timeString;
+      }
+    },
+    
+    // NEW METHOD: Navigate to track screen with attendance details
+    navigateToTrackScreen() {
+      const attendanceData = {
+        courseCode: this.courseCode,
+        section: this.selectedSection,
+        date: this.selectedDate,
+        timeSlot: this.consolidateTimeSlots(),
+        isExam: this.isExam,
+        sessionID: this.sessionID,
+        students: this.studentsList,
+        totalStudents: this.studentsList.length
+      };
+      
+      // Navigate to track screen with the attendance data
+      // You can use Vue Router to navigate and pass the data
+      this.$router.push({
+        name: 'TrackStudents', // Replace with your actual route name
+        params: {
+          attendanceData: JSON.stringify(attendanceData)
+        },
+        query: {
+          courseCode: this.courseCode,
+          section: this.selectedSection,
+          sessionID: this.sessionID
+        }
+      });
+    },
+    
     toggleTimeSlot(index) {
   if (this.selectedSlots.includes(index)) {
     // If the user deselects a middle slot in a selection of more than 3 slots, clear all selections
@@ -193,80 +303,250 @@ export default {
   }
 },
 
+    // NEW METHOD: Consolidate consecutive time slots into a range
+    consolidateTimeSlots() {
+      if (this.selectedSlots.length === 0) return "";
+      
+      // Sort the selected slots
+      const sortedSlots = [...this.selectedSlots].sort((a, b) => a - b);
+      
+      // Get the start and end times
+      const startSlot = sortedSlots[0];
+      const endSlot = sortedSlots[sortedSlots.length - 1] + 1; // +1 because we want the end time of the last slot
+      
+      // Extract start time from the first slot
+      const startTime = this.timeSlots[startSlot].split(' - ')[0]; // e.g., "8:00 AM"
+      
+      // Extract end time from what would be the next slot after the last selected
+      let endTime;
+      if (endSlot < this.timeSlots.length) {
+        endTime = this.timeSlots[endSlot].split(' - ')[0]; // e.g., "11:00 AM"
+      } else {
+        // Handle case where last slot is selected (23rd index = 11 PM - 12 AM)
+        endTime = "12:00 AM"; // Next day
+      }
+      
+      return `${startTime} - ${endTime}`;
+    },
+
 async generateQRCode() {
-  const formattedDate = this.selectedDate.replace(/-/g, "");
-  this.sessionID = `session_${formattedDate}_${Date.now()}`;
-  const qrCodeValue = `${this.courseCode}/S${this.selectedSection}/${this.sessionID}`;
+  try {
+    // Check if user is authenticated
+    if (!this.currentUser) {
+      alert('Please log in to generate attendance');
+      return;
+    }
 
-  const db = getDatabase();
-  set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`), {
-    date: this.selectedDate,
-    qrCode: qrCodeValue,
-    timestamp: new Date().toISOString(),
-    timeSlots: this.selectedSlots.map(i => this.timeSlots[i]),
-    students: {},
-    expired: false
-  });
+    const formattedDate = this.selectedDate.replace(/-/g, "");
+    this.sessionID = `session_${formattedDate}_${Date.now()}`;
+    const qrCodeValue = `${this.courseCode}/S${this.selectedSection}/${this.sessionID}`;
 
-  this.qrGenerated = true;
-  this.qrButtonDisabled = true;
+    // Get consolidated time slot
+    const consolidatedTimeSlot = this.consolidateTimeSlots();
+    const currentTimestamp = new Date().toISOString();
+    const attendanceGeneratedTime = new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
 
-  this.$nextTick(() => {
-    QRCode.toCanvas(this.$refs.qrCanvas, qrCodeValue, {
-      width: 400,
-      color: { dark: "#90ee90", light: "#000000" }
-    },(error) => {
-        if (error){
-              console.error(error);
-            }
-  
-            // Add image to the center of the QR Code
-            const canvas = this.$refs.qrCanvas;
-            const ctx = canvas.getContext("2d");
-            const img = new Image();
-            img.src = require('@/assets/mm.png'); // Logo in QR code
-            img.onload = function () {
-              const newWidth = 160;
-              const newHeight = 70;
-              const x = (canvas.width - newWidth) / 2;
-              const y = (canvas.height - newHeight) / 2;
-              ctx.drawImage(img, x, y, newWidth, newHeight);
-            };
+    const db = getDatabase();
+    
+    // 1. Store in existing attendance structure (keep this for QR functionality)
+    await set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`), {
+      date: this.selectedDate,
+      qrCode: qrCodeValue,
+      timestamp: currentTimestamp,
+      timeSlot: consolidatedTimeSlot,
+      isExam: this.isExam,
+      students: {},
+      expired: false
+    });
+
+    // 2. Store in lecture folder structure for record keeping
+    const attendanceType = this.isExam ? 'exam' : 'class';
+    const lecturePath = `users/lecturers/${this.currentUser.uid}/${attendanceType}/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`;
+    
+    const attendanceRecord = {
+      // Basic session info
+      courseCode: this.courseCode,
+      section: this.selectedSection,
+      sessionId: this.sessionID,
+      attendanceType: this.isExam ? 'exam' : 'class',
+      
+      // Date and time information
+      date: this.selectedDate,
+      attendanceGeneratedTime: attendanceGeneratedTime,
+      attendanceGeneratedTimestamp: currentTimestamp,
+      timeSlot: consolidatedTimeSlot,
+      selectedTimeSlots: [...this.selectedSlots], // Store original slot indices
+      
+      // QR Code info
+      qrCode: qrCodeValue,
+      qrCodeExpired: false,
+      
+      // Session status
+      sessionActive: true,
+      sessionStartTime: currentTimestamp,
+      sessionEndTime: null,
+      
+      // Student tracking
+      totalStudentsScanned: 0,
+      studentsData: {},
+      
+      // Additional metadata
+      createdBy: this.currentUser.uid,
+      createdByEmail: this.currentUser.email || '',
+      lastUpdated: currentTimestamp,
+      
+      // Academic information
+      academicInfo: {
+        courseCode: this.courseCode,
+        sectionNumber: this.selectedSection,
+        sessionType: this.isExam ? 'examination' : 'lecture',
+        scheduledDate: this.selectedDate,
+        scheduledTimeSlot: consolidatedTimeSlot
+      }
+    };
+
+    await set(ref(db, lecturePath), attendanceRecord);
+
+    this.qrGenerated = true;
+    this.qrButtonDisabled = true;
+
+    this.$nextTick(() => {
+      QRCode.toCanvas(this.$refs.qrCanvas, qrCodeValue, {
+        width: 400,
+        color: { dark: "#32cd32", light: "#000000" }
+      }, (error) => {
+        if (error) {
+          console.error(error);
+        }
+
+        // Add image to the center of the QR Code
+        const canvas = this.$refs.qrCanvas;
+        const ctx = canvas.getContext("2d");
+        const img = new Image();
+        img.src = require('@/assets/mm.png');
+        img.onload = function () {
+          const newWidth = 160;
+          const newHeight = 70;
+          const x = (canvas.width - newWidth) / 2;
+          const y = (canvas.height - newHeight) / 2;
+          ctx.drawImage(img, x, y, newWidth, newHeight);
+        };
       });
 
-    // Start listening for students who scan the QR
-    this.listenForStudents();
-  });
+      // Start listening for students who scan the QR
+      this.listenForStudents();
+    });
+
+    console.log('Attendance record created successfully at:', lecturePath);
+    
+  } catch (error) {
+    console.error('Error generating QR code and creating attendance record:', error);
+    alert('Failed to generate attendance. Please try again.');
+  }
 },
 
+// Update your listenForStudents method to also update the lecture folder:
 listenForStudents() {
   const db = getDatabase();
   const studentsRef = ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/students`);
 
-  onValue(studentsRef, (snapshot) => {
+  onValue(studentsRef, async (snapshot) => {
     if (snapshot.exists()) {
-      this.studentsList = Object.values(snapshot.val()); // Convert object to array
+      this.studentsList = Object.values(snapshot.val());
+      
+      // Also update the lecture folder with student data
+      if (this.currentUser) {
+        const attendanceType = this.isExam ? 'exam' : 'class';
+        const lecturePath = `users/lecturers/${this.currentUser.uid}/${attendanceType}/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`;
+        
+        // Update student count and data in lecture folder
+        const updates = {
+          [`${lecturePath}/totalStudentsScanned`]: this.studentsList.length,
+          [`${lecturePath}/studentsData`]: snapshot.val(),
+          [`${lecturePath}/lastUpdated`]: new Date().toISOString()
+        };
+        
+        try {
+          await update(ref(db), updates);
+        } catch (error) {
+          console.error('Error updating student data in lecture folder:', error);
+        }
+      }
     } else {
       this.studentsList = [];
     }
   });
 },
 
+// Update your endAttendance method to also update the lecture folder:
 async endAttendance() {
-  if (!this.sessionID) return;
+  if (!this.sessionID || !this.currentUser) return;
 
-  const db = getDatabase();
-  set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/expired`), true);
+  try {
+    const db = getDatabase();
+    const endTimestamp = new Date().toISOString();
+    const endTime = new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
 
-  this.qrGenerated = false;
-  this.qrButtonDisabled = false; // Re-enable the button
-  alert("Attendance session ended. QR Code is now expired.");
+    // Update the existing attendance structure
+    await set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/expired`), true);
+
+    // Update the lecture folder
+    const attendanceType = this.isExam ? 'exam' : 'class';
+    const lecturePath = `users/lecturers/${this.currentUser.uid}/${attendanceType}/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`;
+    
+    const updates = {
+      [`${lecturePath}/sessionActive`]: false,
+      [`${lecturePath}/sessionEndTime`]: endTimestamp,
+      [`${lecturePath}/sessionEndTimeFormatted`]: endTime,
+      [`${lecturePath}/qrCodeExpired`]: true,
+      [`${lecturePath}/lastUpdated`]: endTimestamp,
+      [`${lecturePath}/finalStudentCount`]: this.studentsList.length
+    };
+
+    await update(ref(db), updates);
+
+    this.qrGenerated = false;
+    this.qrButtonDisabled = false;
+    alert(`${this.isExam ? 'Exam' : 'Class'} attendance session ended. QR Code is now expired.`);
+    
+  } catch (error) {
+    console.error('Error ending attendance session:', error);
+    alert('Error ending session. Please try again.');
+  }
 }
   }
 };
 </script>
 
-<style>
+<style scoped>
+body {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 50%, #0d4f3c 100%) !important;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+:global(body) {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 50%, #0d4f3c 100%) !important;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
 /* Darker container background */
 .container {
   max-width: 1450px;
@@ -313,7 +593,7 @@ input, select {
   width: 100%;
   padding: 10px;
   border-radius: 5px;
-  border: 2px solid white; /* White border */
+  border: 2px solid #32cd32; /* New green border */
   font-size: 16px;
   background-color: #333; /* Dark grey background */
   color: white; /* White text */
@@ -322,7 +602,7 @@ input, select {
 /* When input is focused */
 input:focus, select:focus {
   outline: none;
-  border-color: white; /* Keep border white */
+  border-color: #90ee90; /* Lighter green on focus */
 }
 
 /* Placeholder text color */
@@ -345,7 +625,7 @@ select {
 input[type="date"] {
   background-color: #333;
   color: white;
-  border: 2px solid white;
+  border: 2px solid #32cd32; /* New green border */
   padding: 10px;
   border-radius: 5px;
   font-size: 16px;
@@ -366,6 +646,69 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 input, select {
   box-shadow: none;
   appearance: none;
+}
+
+/* Toggle Switch Styles */
+.toggle-container {
+  margin-top: 5px;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 280px;
+  height: 50px;
+  background-color: #333;
+  border-radius: 25px;
+  border: 2px solid white;
+  cursor: pointer;
+  display: flex;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.toggle-switch:hover {
+  border-color: #32cd32;
+  box-shadow: 0 0 10px rgba(50, 205, 50, 0.3);
+}
+
+.toggle-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: bold;
+  font-size: 16px;
+  color: #888;
+  transition: all 0.3s ease;
+  z-index: 2;
+  position: relative;
+  padding: 0 15px;
+}
+
+.toggle-option.active {
+  color: #333;
+}
+
+.toggle-option i {
+  font-size: 18px;
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  height: calc(100% - 6px);
+  background: linear-gradient(135deg, lightgreen, #32cd32);
+  border-radius: 22px;
+  transition: transform 0.3s ease;
+  z-index: 1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-slider.slide-right {
+  transform: translateX(100%);
 }
 
 /* Header container for label + info icon */
@@ -404,13 +747,13 @@ input, select {
 }
 
 .slot.selected {
-  background: lightgreen;
+  background: linear-gradient(135deg, #32cd32, #228b22);
   color: rgb(0, 0, 0);
 }
 
 /* Button styles */
 button {
-  background: lightgreen;
+  background: linear-gradient(135deg, #32cd32, #228b22);
   color: white;
   font-weight: bold;
   cursor: pointer;
@@ -430,7 +773,7 @@ button:disabled {
 }
 
 button:hover:not(:disabled) {
-  background: lightgreen;
+  background: linear-gradient(135deg, #228b22, #32cd32);
 }
 
 .button-group {
@@ -480,7 +823,7 @@ button:hover:not(:disabled) {
 /* Info Icon */
 .info-icon {
   font-size: 20px;
-  color: lightgreen;
+  color: #32cd32;
   cursor: pointer;
   transition: color 0.3s;
   margin-left: 10px; /* Moves the icon slightly to the left */
@@ -515,7 +858,7 @@ button:hover:not(:disabled) {
 
 /* Close button inside the box */
 .info-box button {
-  background: lightgreen;
+  background: linear-gradient(135deg, #32cd32, #228b22);
   color: black;
   font-weight: bold;
   border: none;
@@ -527,7 +870,7 @@ button:hover:not(:disabled) {
 }
 
 .info-box button:hover {
-  background: green;
+  background: linear-gradient(135deg, #228b22, #32cd32);
   color: white;
 }
 
@@ -539,11 +882,11 @@ button:hover:not(:disabled) {
   text-align: left;
   max-height: 250px; /* Limit height */
   overflow-y: auto; /* Scrollable */
-  border: 2px solid lightgreen;
+  border: 2px solid #32cd32;
 }
 
 .students-container h3 {
-  color: lightgreen;
+  color: #32cd32;
   text-align: center;
   margin-bottom: 10px;
 }
@@ -606,5 +949,38 @@ canvas {
   text-align: left; /* Align to left */
 }
 
+/* Track Students Button Styles */
+.track-button-container {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 2px solid #32cd32;
+}
 
+.track-btn {
+  background: linear-gradient(135deg, #ff6b35, #f7931e);
+  color: white;
+  font-weight: bold;
+  padding: 12px 20px;
+  border-radius: 8px;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  width: 100%;
+  margin-top: 0;
+}
+
+.track-btn:hover {
+  background: linear-gradient(135deg, #f7931e, #ff6b35);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+}
+
+.track-btn i {
+  font-size: 18px;
+}
 </style>
