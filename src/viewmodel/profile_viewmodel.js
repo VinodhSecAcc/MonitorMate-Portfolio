@@ -1,6 +1,7 @@
 import { FirebaseService } from "@/service/firebase_service";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { reactive } from "vue";
+import { ProfileModel } from "@/model/profile_model";
 
 const ProfileViewModel = reactive({
   userId: "",
@@ -17,62 +18,24 @@ const ProfileViewModel = reactive({
   errors: {}, 
   originalProfileData: {}, 
 
-  facultyCourses: {
-    "Faculty of Built Environment and Surveying": [
-      "Urban and Regional Planning",
-      "Quantity Surveying",
-      "Land Administration and Development",
-      "Science in Architecture",
-      "Science in Geoinformatics",
-      "Science in Property Management",
-      "Landscape Architecture"
-    ],
-    "Faculty of Computing": [
-      "Software Engineering",
-      "Data Engineering",
-      "Computer Network and Security",
-      "Graphics and Multimedia Software",
-      "Bioinformatics",
-      "Artificial Intelligence"
-    ],
-    "Faculty of Engineering": [
-      "Civil",
-      "Electrical",
-      "Mechanical",
-      "Chemical",
-      "Biomedical",
-      "Petroleum",
-      "Geomatic",
-      "Environmental",
-      "Aerospace",
-      "Naval Architecture and Offshore Engineering",
-      "Electronic",
-      "Mechatronics",
-      "Computer and Communication"
-    ],
-    "Faculty of Science": [
-      "Industrial Chemistry",
-      "Physics",
-      "Industrial Mathematics",
-      "Biology",
-      "Chemistry",
-      "Mathematics",
-      "Statistics"
-    ],
-    "Faculty of Social Sciences and Humanities": [
-      "Management (Technology)",
-      "Management (Marketing)",
-      "Management (Human Resource Development)",
-      "Science in Psychology",
-      "Science in Education (TESL)",
-      "Science in Education (Mathematics)",
-      "Science in Education (Physics)",
-      "Science in Education (Chemistry)",
-      "Science in Education (Biology)",
-      "Science in Education (Islamic Studies)",
-      "Science in Education (Guidance and Counseling)"
-    ],
+  get facultyCourses() {
+  const model = new ProfileModel();
+  return model.getFacultyCourses();
+},
+
+// Add these watchers to your ViewModel
+watch: {
+  username(newValue) {
+    if (newValue) {
+      this.username = newValue.toUpperCase();
+    }
   },
+  universityId(newValue) {
+    if (newValue) {
+      this.universityId = newValue.toUpperCase();
+    }
+  }
+},
 
   initAuth(callback) {
     const auth = getAuth();
@@ -116,17 +79,18 @@ const ProfileViewModel = reactive({
   },
 
   validateForm() {
-    this.errors = {};
-
-    if (!this.username.trim()) this.errors.username = "Username is required.";
-    if (!this.universityId.trim()) this.errors.universityId = "University ID is required.";
-    if (!this.phoneNumber.trim()) this.errors.phoneNumber = "Phone number is required.";
-    if (!this.selectedFaculty) this.errors.selectedFaculty = "Faculty is required.";
-    if (!this.selectedCourse) this.errors.selectedCourse = "Course is required.";
-
-    return Object.keys(this.errors).length === 0;
-  },
-
+  const model = new ProfileModel({
+    username: this.username,
+    universityId: this.universityId,
+    phoneNumber: this.phoneNumber,
+    faculty: this.selectedFaculty,
+    course: this.selectedCourse
+  });
+  
+  const validation = model.validate();
+  this.errors = validation.errors;
+  return validation.isValid;
+},
   async saveProfile() {
     if (!this.userId) return;
     if (!this.validateForm()) return; 

@@ -185,7 +185,10 @@
   <i class="fas fa-trash"></i>
   Delete Student
 </button>
-                  <button @click="trackActivity(student)" class="action-btn track-btn" title="Send Warning to Student">
+<!-- Temporarily modify your send warning button to add debugging -->
+<button @click="console.log('Button clicked with student:', student); trackActivityWithHTTP(student)" 
+        class="action-btn track-btn" 
+        title="Send Warning to Student">
   <i class="fas fa-exclamation-triangle"></i>
   Send Warning
 </button>
@@ -227,16 +230,102 @@
       </div>
     </div>
   </div>
+
   <!-- QR Code Modal -->
-<QRCodeGenerator
-  :courseCode="sessionData.courseCode"
-  :selectedSection="sessionData.section"
-  :sessionID="currentSessionID"
-  :selectedDate="sessionData.date"
-  :timeSlot="sessionData.timeSlot"
-  :isExam="sessionData.isExam"
-  :isVisible="showQRModal"
-  @close="closeQRModal"
+<div v-if="showQRModal" class="qr-modal-overlay" @click="closeQRModal">
+  <div class="qr-modal-content" @click.stop>
+    <div class="qr-modal-header">
+      <h3>
+        <i class="fas fa-qrcode"></i>
+        {{ sessionData.isExam ? 'Exam' : 'Class' }} Attendance QR Code
+      </h3>
+      <button @click="closeQRModal" class="close-modal-btn">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+    
+    <div class="qr-modal-body">
+      <div class="qr-info">
+        <div class="qr-details">
+          <p><strong>Course:</strong> {{ courseCode }}</p>
+          <p><strong>Section:</strong> {{ selectedSection }}</p>
+          <p><strong>Date:</strong> {{ formatDate(sessionData.date) }}</p>
+          <p><strong>Time Slot:</strong> {{ sessionData.timeSlot }}</p>
+          <p><strong>Type:</strong> {{ sessionData.isExam ? 'Exam' : 'Class' }}</p>
+        </div>
+      </div>
+      
+      <div class="qr-container">
+        <canvas ref="qrCanvas" class="qr-canvas"></canvas>
+        <p class="qr-instruction">Students can scan this QR code to mark their attendance</p>
+      </div>
+      
+      <div class="qr-actions">
+        <button 
+          v-if="attendanceSessionActive" 
+          @click="endCurrentAttendance" 
+          class="end-session-btn"
+        >
+          <i class="fas fa-stop"></i>
+          End Attendance Session
+        </button>
+        
+        <div class="session-status" :class="{ 'active': attendanceSessionActive, 'inactive': !attendanceSessionActive }">
+          <i class="fas fa-circle"></i>
+          {{ attendanceSessionActive ? 'Session Active' : 'Session Ended' }}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+  <!-- QR Code Modal -->
+  <div v-if="showQRModal" class="qr-modal-overlay" @click="closeQRModal">
+    <div class="qr-modal-content" @click.stop>
+      <div class="qr-modal-header">
+        <h3>
+          <i class="fas fa-qrcode"></i>
+          {{ sessionData.isExam ? 'Exam' : 'Class' }} Attendance QR Code
+        </h3>
+        <button @click="closeQRModal" class="close-modal-btn">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="qr-modal-body">
+        <div class="qr-info">
+          <div class="qr-details">
+            <p><strong>Course:</strong> {{ courseCode }}</p>
+            <p><strong>Section:</strong> {{ selectedSection }}</p>
+            <p><strong>Date:</strong> {{ formatDate(sessionData.date) }}</p>
+            <p><strong>Time Slot:</strong> {{ sessionData.timeSlot }}</p>
+            <p><strong>Type:</strong> {{ sessionData.isExam ? 'Exam' : 'Class' }}</p>
+          </div>
+        </div>
+
+        <div class="qr-container">
+          <canvas ref="qrCanvas" class="qr-canvas"></canvas>
+          <p class="qr-instruction">Students can scan this QR code to mark their attendance</p>
+        </div>
+
+        <div class="qr-actions">
+          <button
+            v-if="attendanceSessionActive"
+            @click="endCurrentAttendance"
+            class="end-session-btn"
+          >
+            <i class="fas fa-stop"></i>
+            End Attendance Session
+          </button>
+
+          <div class="session-status" :class="{ 'active': attendanceSessionActive, 'inactive': !attendanceSessionActive }">
+            <i class="fas fa-circle"></i>
+            {{ attendanceSessionActive ? 'Session Active' : 'Session Ended' }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   @qr-generated="onQRGenerated"
   @qr-error="onQRError"
   @attendance-ended="onAttendanceEnded"
@@ -274,9 +363,10 @@
 
 <script>
 import navigation_bar from '@/components/navigation_bar.vue';
-import { ref, onValue, off, getDatabase, remove, get } from 'firebase/database';
-import QRCodeGenerator from '@/components/QRCodeGenerator.vue';
+import { ref, onValue, off, getDatabase, remove, get, set, update } from 'firebase/database';
 import { useHead } from '@vueuse/head';
+import { getAuth } from 'firebase/auth';
+import QRCode from "qrcode";
 
 
 export default {
@@ -288,8 +378,7 @@ export default {
   },
   name: 'TrackStudents',
   components: {
-    navigation_bar,
-    QRCodeGenerator
+    navigation_bar
   },
   data() {
     return {
@@ -318,7 +407,12 @@ export default {
       currentSessionID: null,
       showDeleteModal: false,
       studentToDelete: null,
-      deleting: false
+      deleting: false,
+      qrGenerated: false,
+      qrCodeValue: '',
+      currentUser: null,
+      qrButtonDisabled: false,
+      attendanceSessionActive: false
     };
   },
   mounted() {
@@ -438,43 +532,6 @@ export default {
   }
 },
 
-// Add this import to your existing imports:
-// import { ref, onValue, off, getDatabase, remove, get } from 'firebase/database';
-
-// Add this debugging method to help find the actual user data structure
-/*async debugUserDataLocation(userId, attendanceFolder) {
-  try {
-    const db = getDatabase();
-    
-    // Check the entire user node structure
-    console.log('🔍 Debugging user data location for userId:', userId);
-    
-    const userRootRef = ref(db, `users/students/${userId}`);
-    const snapshot = await get(userRootRef);
-    
-    if (snapshot.exists()) {
-      console.log('📁 Full user data structure:', JSON.stringify(snapshot.val(), null, 2));
-      
-      // Try to find any reference to this course/session
-      const userData = snapshot.val();
-      this.searchInObject(userData, this.courseCode, `users/students/${userId}`);
-      this.searchInObject(userData, this.sessionID, `users/students/${userId}`);
-    } else {
-      console.log('❌ No user data found at users/students/' + userId);
-      
-      // Check if user exists at different path
-      const altUserRef = ref(db, `users/${userId}`);
-      const altSnapshot = await get(altUserRef);
-      if (altSnapshot.exists()) {
-        console.log('📁 Found user at alternative path users/' + userId);
-        console.log('Data:', JSON.stringify(altSnapshot.val(), null, 2));
-      }
-    }
-  } catch (error) {
-    console.error('Error debugging user data location:', error);
-  }
-},*/
-
 // Helper method to search for specific values in nested objects
 searchInObject(obj, searchValue, currentPath = '') {
   if (typeof obj !== 'object' || obj === null) return;
@@ -546,6 +603,7 @@ searchInObject(obj, searchValue, currentPath = '') {
     },
 
     // Fixed loadStudentsData method with proper data handling
+// Fixed loadStudentsData method with proper userId handling
 loadStudentsData() {
   const db = getDatabase();
   const studentsRef = ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/students`);
@@ -558,20 +616,46 @@ loadStudentsData() {
       
       const studentsData = snapshot.val();
       const allUserIds = Object.keys(studentsData);
+      console.log('Raw students data from Firebase:', studentsData);
       console.log('Found user IDs:', allUserIds);
       
       // Process each student individually with proper error handling
       const studentPromises = allUserIds.map(async (userId) => {
         try {
           const studentData = studentsData[userId];
+          console.log(`Processing student ${userId}:`, studentData);
           
+          // Validate that we have minimum required data
+          if (!studentData) {
+            console.error(`No data found for user ${userId}`);
+            return null;
+          }
+
+          // Extract username - try multiple possible fields
+          let username = studentData.username || 
+                        studentData.userName || 
+                        studentData.name || 
+                        studentData.displayName;
+          
+          // Extract university ID - try multiple possible fields  
+          let universityId = studentData.universityId || 
+                           studentData.university_id || 
+                           studentData.studentId || 
+                           studentData.id || 
+                           userId;
+
+          if (!username) {
+            console.error(`No username found for user ${userId}`, studentData);
+            username = `User_${userId}`; // Fallback username
+          }
+
           // Create student object with proper validation
           const studentObj = {
-            username: studentData.username || 'N/A',
-            universityId: studentData.universityId || userId,
-            scanTime: studentData.scanTime || 'N/A',
-            apps: [],
-            userId: userId // Keep original userId for reference
+            userId: userId,                    // CRITICAL: This is the key for Firebase operations
+            username: String(username).trim(), // Clean username
+            universityId: String(universityId).trim(), // Clean university ID
+            scanTime: studentData.scanTime || studentData.timestamp || 'N/A',
+            apps: []
           };
 
           // Process app data if it exists
@@ -579,16 +663,24 @@ loadStudentsData() {
             studentObj.apps = this.processAppData(studentData.app);
           }
 
+          console.log('Successfully processed student:', {
+            userId: studentObj.userId,
+            username: studentObj.username,
+            universityId: studentObj.universityId,
+            hasApps: studentObj.apps.length > 0
+          });
+
           return studentObj;
         } catch (error) {
           console.error(`Error processing student data for ${userId}:`, error);
-          // Return a fallback student object
+          
+          // Return a fallback student object to prevent complete failure
           return {
-            username: 'Error Loading',
+            userId: userId,
+            username: `Error_User_${userId}`,
             universityId: userId,
             scanTime: 'N/A',
-            apps: [],
-            userId: userId
+            apps: []
           };
         }
       });
@@ -597,9 +689,23 @@ loadStudentsData() {
       try {
         const processedStudents = await Promise.all(studentPromises);
         
-        // Filter out any null/undefined results and sort by scan time
+        // Filter out any null results and validate each student
         this.sessionData.students = processedStudents
-          .filter(student => student !== null)
+          .filter(student => {
+            if (!student) return false;
+            
+            // Final validation
+            const isValid = student.userId && 
+                           student.username && 
+                           student.username !== 'undefined' && 
+                           student.username !== 'null';
+            
+            if (!isValid) {
+              console.error('Invalid student object:', student);
+            }
+            
+            return isValid;
+          })
           .sort((a, b) => {
             // Sort by scan time (earliest first)
             if (a.scanTime === 'N/A' && b.scanTime === 'N/A') return 0;
@@ -618,7 +724,13 @@ loadStudentsData() {
         this.filteredStudents = [...this.sessionData.students];
         this.filterStudents(); // Apply any existing search filter
         
-        console.log('Processed students:', this.sessionData.students);
+        console.log('Final processed students:', 
+          this.sessionData.students.map(s => ({ 
+            userId: s.userId, 
+            username: s.username, 
+            universityId: s.universityId 
+          }))
+        );
         
       } catch (error) {
         console.error('Error processing students data:', error);
@@ -630,6 +742,7 @@ loadStudentsData() {
       this.sessionData.students = [];
       this.sessionData.totalStudents = 0;
       this.filteredStudents = [];
+      console.log('No students data found in Firebase');
     }
     
     this.loading = false;
@@ -934,34 +1047,264 @@ filterStudents() {
       });
     },
 
-    trackActivity(student) {
-      // Navigate to student activity tracking page
-      this.$router.push({
-        name: 'StudentActivity', // Replace with your route name
-        params: {
-          universityId: student.universityId,
-          courseCode: this.courseCode,
-          section: this.selectedSection
-        },
-        query: {
-          username: student.username
-        }
-      });
-    },
+    async trackActivityWithHTTP(student) {
+  // Declare variables outside try-catch
+  let button = null;
+  let originalContent = '';
+  
+  try {
+    console.log('=== HTTP METHOD DEBUG START ===');
+    
+    if (!student) {
+      throw new Error('Student parameter is null or undefined');
+    }
 
-    showAttendanceQR() {
-    // Generate a new session ID or reuse current one
-    this.currentSessionID = this.sessionID || this.generateSessionID();
+    // Get button and show loading
+    button = event?.target?.closest('.track-btn') || 
+             document.activeElement?.closest('.track-btn');
+    originalContent = button?.innerHTML || '';
+    
+    if (button) {
+      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+      button.disabled = true;
+    }
+
+    // Extract and clean data
+    const userId = String(student.userId || student.universityId || student.id || '').trim();
+const username = String(student.username || student.userName || student.name || '').trim();
+const universityId = String(student.universityId || student.university_id || student.studentId || userId || '').trim();
+
+if (!userId || !username) {
+  throw new Error(`Missing required fields: userId=${userId}, username=${username}`);
+}
+if (userId || username) {
+  console.log(`userid and username data: userId=${userId}, username=${username}`);
+}
+
+    const payload = {
+  userId: userId,
+  username: username,
+  universityId: universityId || '',
+  courseCode: this.courseCode || '',
+  section: this.selectedSection || '',
+  sessionType: this.sessionData.isExam ? 'Exam' : 'Class',
+  timeSlot: this.sessionData.timeSlot || '',
+  date: this.sessionData.date || ''
+};
+
+    console.log('HTTP Payload:', JSON.stringify(payload));
+    console.log('CL user id:', userId);
+    console.log('CL username:', username);
+
+    // Get the Firebase project ID and region
+    const projectId = 'monitormate-3d3ce'; // Replace with your project ID
+    const region = 'us-central1';
+    const functionName = 'sendWarningNotification';
+    
+    // Get auth token
+    const auth = getAuth();
+    const user = auth.currentUser;
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+    
+    const token = await user.getIdToken();
+
+    const response = await fetch(`https://${region}-${projectId}.cloudfunctions.net/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('HTTP Error Response:', errorText);
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+
+    const result = await response.json();
+    console.log('HTTP Success:', result);
+
+    // Show success
+    button.innerHTML = '<i class="fas fa-check"></i> Warning Sent!';
+    button.classList.add('success');
+    
+    setTimeout(() => {
+      button.innerHTML = originalContent;
+      button.disabled = false;
+      button.classList.remove('success');
+    }, 3000);
+
+  } catch (error) {
+    console.error('=== HTTP METHOD ERROR ===');
+    console.error('Error:', error);
+    
+    // Reset button
+    if (!button) {
+      button = event?.target?.closest('.track-btn') || 
+               document.activeElement?.closest('.track-btn');
+    }
+    
+    if (button) {
+      button.innerHTML = '<i class="fas fa-times"></i> Failed';
+      button.classList.add('error');
+      
+      setTimeout(() => {
+        button.innerHTML = originalContent || '<i class="fas fa-exclamation-triangle"></i> Send Warning';
+        button.disabled = false;
+        button.classList.remove('error');
+      }, 3000);
+    }
+
+    alert(`Error: ${error.message}`);
+  }
+},
+
+  
+// Add this method to your Vue component to debug student data structure
+// Add this method to your Vue component
+debugStudentStructure(student) {
+  console.log('=== DETAILED STUDENT DEBUG ===');
+  console.log('1. Full student object:', student);
+  console.log('2. Type:', typeof student);
+  console.log('3. Is array?', Array.isArray(student));
+  console.log('4. Object keys:', Object.keys(student || {}));
+  console.log('5. Object values:', Object.values(student || {}));
+  
+  // Check each possible property
+  const possibleProps = ['userId', 'id', 'universityId', 'username', 'userName', 'name', 'studentId', 'university_id'];
+  
+  console.log('6. Property check:');
+  possibleProps.forEach(prop => {
+    const value = student?.[prop];
+    console.log(`   ${prop}: ${value} (type: ${typeof value})`);
+  });
+  
+  // Check if it's nested
+  if (student && typeof student === 'object') {
+    Object.keys(student).forEach(key => {
+      const value = student[key];
+      if (typeof value === 'object' && value !== null) {
+        console.log(`7. Nested object found at '${key}':`, value);
+        console.log(`   Keys in ${key}:`, Object.keys(value));
+      }
+    });
+  }
+  
+  console.log('=== END STUDENT DEBUG ===');
+},
+
+// Call this before trackActivity
+onTrackClick(student) {
+  this.debugStudentStructure(student);
+  this.trackActivity(student);
+},
+
+// Add this temporary method to your template's manage actions column for testing
+testTrackActivity(student) {
+  console.log('=== TEST TRACK ACTIVITY ===');
+  console.log('Student passed to trackActivity:', student);
+  this.debugStudentData();
+  this.trackActivity(student);
+},
+
+    async showAttendanceQR() {
+  try {
+    // Get current user
+    const auth = getAuth();
+    this.currentUser = auth.currentUser;
+    
+    if (!this.currentUser) {
+      alert('Please log in to generate attendance QR');
+      return;
+    }
+
+    // Generate QR code value using existing session data
+    this.qrCodeValue = `${this.courseCode}/S${this.selectedSection}/${this.sessionID}`;
+    
     this.showQRModal = true;
-  },
+    this.qrGenerated = true;
+    this.attendanceSessionActive = true;
+
+    // Wait for next tick to ensure modal is rendered
+    this.$nextTick(() => {
+      // Generate QR code on canvas
+      QRCode.toCanvas(this.$refs.qrCanvas, this.qrCodeValue, {
+        width: 400,
+        color: { dark: "#32cd32", light: "#000000" }
+      }, (error) => {
+        if (error) {
+          console.error('QR Code generation error:', error);
+          return;
+        }
+
+        // Add logo to QR code center
+        const canvas = this.$refs.qrCanvas;
+        const ctx = canvas.getContext("2d");
+        const img = new Image();
+        img.src = require('@/assets/mm.png'); // Make sure this path is correct
+        img.onload = function () {
+          const newWidth = 160;
+          const newHeight = 70;
+          const x = (canvas.width - newWidth) / 2;
+          const y = (canvas.height - newHeight) / 2;
+          ctx.drawImage(img, x, y, newWidth, newHeight);
+        };
+      });
+    });
+
+  } catch (error) {
+    console.error('Error showing QR code:', error);
+    alert('Failed to generate QR code. Please try again.');
+  }
+},
+
+async endCurrentAttendance() {
+  if (!this.sessionID || !this.currentUser) return;
+
+  try {
+    const db = getDatabase();
+    const endTimestamp = new Date().toISOString();
+
+    // Mark session as expired in the attendance structure
+    await set(ref(db, `attendance/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}/expired`), true);
+
+    // Update lecture folder if it exists
+    const attendanceType = this.sessionData.isExam ? 'exam' : 'class';
+    const lecturePath = `users/lecturers/${this.currentUser.uid}/${attendanceType}/${this.courseCode}/section_${this.selectedSection}/${this.sessionID}`;
+    
+    const updates = {
+      [`${lecturePath}/sessionActive`]: false,
+      [`${lecturePath}/qrCodeExpired`]: true,
+      [`${lecturePath}/sessionEndTime`]: endTimestamp,
+      [`${lecturePath}/lastUpdated`]: endTimestamp
+    };
+
+    await update(ref(db), updates);
+
+    this.attendanceSessionActive = false;
+    this.qrGenerated = false;
+    this.showQRModal = false;
+    
+    alert(`${this.sessionData.isExam ? 'Exam' : 'Class'} attendance session ended. QR Code is now expired.`);
+    
+  } catch (error) {
+    console.error('Error ending attendance session:', error);
+    alert('Error ending session. Please try again.');
+  }
+},
+
+closeQRModal() {
+  this.showQRModal = false;
+},
 
   generateSessionID() {
     // Generate a unique session ID
     return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  },
-
-  closeQRModal() {
-    this.showQRModal = false;
   },
 
   onQRGenerated(data) {
@@ -1955,5 +2298,237 @@ input {
 .confirm-delete-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
+}
+
+/* Add these CSS styles for the button states */
+.track-btn.success {
+  background-color: #28a745 !important;
+  border-color: #28a745 !important;
+  color: white !important;
+}
+
+.track-btn.error {
+  background-color: #dc3545 !important;
+  border-color: #dc3545 !important;
+  color: white !important;
+}
+
+.track-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Optional: Add animation for better UX */
+.track-btn {
+  transition: all 0.3s ease;
+}
+
+.track-btn.success,
+.track-btn.error {
+  transform: scale(1.05);
+}
+
+/* QR Modal Styles - Replace your existing QR modal styles with these */
+
+.qr-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.85); /* Made darker */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px); /* Added blur effect */
+}
+
+.qr-modal-content {
+  background: #1a1a1a; /* Dark background instead of white */
+  border-radius: 12px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid #333; /* Added subtle border */
+}
+
+.qr-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+  background: linear-gradient(135deg, #000000 0%, #32cd32 20%, #000000 100%);
+  color: white;
+  border-radius: 12px 12px 0 0;
+}
+
+.qr-modal-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.close-modal-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-modal-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+.qr-modal-body {
+  padding: 25px;
+  background: #1a1a1a; /* Ensure body is also dark */
+}
+
+.qr-info {
+  margin-bottom: 25px;
+  background: #2a2a2a; /* Darker info section */
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.qr-details p {
+  margin: 10px 0;
+  color: #e0e0e0; /* Light text color */
+  font-size: 0.95rem;
+}
+
+.qr-details strong {
+  color: #32cd32; /* Green accent for labels */
+  font-weight: 600;
+}
+
+.qr-container {
+  text-align: center;
+  margin-bottom: 25px;
+  background: #2a2a2a;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #333;
+}
+
+.qr-canvas {
+  border: 3px solid #32cd32;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  background: white; /* Keep QR background white for readability */
+}
+
+.qr-instruction {
+  color: #b0b0b0;
+  font-style: italic;
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.qr-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}
+
+.end-session-btn {
+  background: linear-gradient(135deg, #dc3545, #c82333);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.end-session-btn:hover {
+  background: linear-gradient(135deg, #c82333, #a71e2a);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+}
+
+.session-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: bold;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+}
+
+.session-status.active {
+  color: #28a745;
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid rgba(40, 167, 69, 0.3);
+}
+
+.session-status.inactive {
+  color: #dc3545;
+  background: rgba(220, 53, 69, 0.1);
+  border: 1px solid rgba(220, 53, 69, 0.3);
+}
+
+.session-status i {
+  font-size: 0.8rem;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* Responsive design for smaller screens */
+@media (max-width: 768px) {
+  .qr-modal-content {
+    width: 95%;
+    margin: 20px;
+  }
+  
+  .qr-modal-body {
+    padding: 20px;
+  }
+  
+  .qr-actions {
+    flex-direction: column;
+    gap: 15px;
+    align-items: stretch;
+  }
+  
+  .end-session-btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .session-status {
+    justify-content: center;
+  }
 }
 </style>

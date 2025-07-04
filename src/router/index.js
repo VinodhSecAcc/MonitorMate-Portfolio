@@ -4,11 +4,18 @@ import Dashboard from "@/view/dashboard_screen.vue";
 import Profile from "@/view/profile_screen.vue";
 import Class from "@/view/class_screen.vue";
 import TrackStudentsComponent from "@/view/track_screen.vue";
+import Report from "@/view/report_screen.vue";
+import LandingScreen from "@/view/landing_screen.vue";
 
 const routes = [
   {
     path: "/",
-    redirect: "/signin", // Redirect root to SignIn page
+    redirect: "/landing", // Redirect root to Landing page
+  },
+  {
+    path: "/landing",
+    name: "Landing",
+    component: LandingScreen
   },
   {
     path: '/track-students',
@@ -34,6 +41,11 @@ const routes = [
     path: "/signin",
     name: "SignIn",
     component: SignIn,
+  },
+  {
+    path: "/report",
+    name: "Report",
+    component: Report,
   },
   
   // Add other routes like signup and forgot-password later
